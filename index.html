@@ -437,6 +437,10 @@ table.ss td.bad{background:var(--bad-soft);outline:1px dashed var(--bad);outline
 
 <main id="app"></main>
 
+<!-- بنوك الأسئلة: كل ملف يضيف أسئلة لاختباراته، و"اختبار جديد" يسحب منها نموذج مختلف -->
+<script src="bank/st-t.js"></script><script src="bank/st-a.js"></script><script src="bank/st-o.js"></script>
+<script src="bank/st-r.js"></script><script src="bank/st-l.js"></script><script src="bank/st-c.js"></script>
+<script src="bank/excel.js"></script><script src="bank/office.js"></script>
 <script>
 
 /* ================= المحتوى ================= */
@@ -2195,7 +2199,8 @@ const store={
 };
 let done=store.get('done',{}),best=store.get('best',{}),stats=store.get('stats',{a:0,c:0}),mistakes=store.get('mistakes',{}),
     vknown=store.get('vknown',{}),checks=store.get('checks',{}),last=store.get('last',null),mockLast=store.get('mock',null);
-const save=()=>{store.set('done',done);store.set('best',best);store.set('stats',stats);store.set('mistakes',mistakes);store.set('vknown',vknown);store.set('checks',checks);store.set('last',last);store.set('mock',mockLast)};
+let seenQ=store.get('seen',{}),lastSet=store.get('lastSet',{}),forms=store.get('forms',{});
+const save=()=>{store.set('seen',seenQ);store.set('lastSet',lastSet);store.set('forms',forms);store.set('done',done);store.set('best',best);store.set('stats',stats);store.set('mistakes',mistakes);store.set('vknown',vknown);store.set('checks',checks);store.set('last',last);store.set('mock',mockLast)};
 
 /* ================= أيقونات ================= */
 const ICON={
@@ -2229,6 +2234,10 @@ function toast(t){const d=document.createElement('div');d.className='toast';d.te
 function copyText(t,fallbackEl){try{navigator.clipboard.writeText(t).then(()=>toast('انسخ ✓ الحين الصقه في إكسل'),()=>sel())}catch(e){sel()}
   function sel(){if(fallbackEl){fallbackEl.hidden=false;fallbackEl.focus();fallbackEl.select();toast('حدّدته لك، اضغط Ctrl+C')}}}
 
+/* بنك الأسئلة: نضيف أسئلة ملفات bank/ لكل اختبار. q.n = عدد أسئلة النموذج الواحد (نفس العدد الأصلي) */
+Object.assign(PASSAGES,window.BANK_P||{});
+Object.values(SECTIONS).forEach(s=>s.quizzes.forEach(q=>{q.n=q.qs.length;const b=(window.BANK||{})[q.id];if(Array.isArray(b))q.qs.push(...b)}));
+const isRead=q=>q.qs.some(d=>d[0]&&d[0].p);
 const KEYQ={};
 Object.entries(SECTIONS).forEach(([sk,s])=>s.quizzes.forEach(qz=>qz.qs.forEach((d,i)=>KEYQ[qz.id+':'+i]={sec:sk,quiz:qz,d})));
 function mkItem(key){const {d,sec,quiz}=KEYQ[key];const [q,opts,right,why]=d;
@@ -2271,7 +2280,7 @@ function home(){
 function footer(){return `<div class="foot"><span class="small">دُربة · محتوى تعليمي مجاني ومستقل، غير تابع لمايكروسوفت ولا لهيئة تقويم التعليم والتدريب. Excel وWord وPowerPoint علامات تجارية لمايكروسوفت، وSTEP اختبار تابع للهيئة، ومعلوماته الرسمية من موقعها. تقدمك محفوظ على جهازك فقط.</span>
   <span id="resetBox"><button class="btn ghost sm" id="reset" type="button">تصفير التقدم</button></span></div>`}
 function bindFooter(){const b=document.getElementById('reset');if(!b)return;b.onclick=()=>{document.getElementById('resetBox').innerHTML=`<span class="confirm"><span>يمسح كل تقدمك ونتائجك. متأكد؟</span><button class="btn sm" id="rsYes" style="--sec:var(--bad)" type="button">امسح</button><button class="btn ghost sm" id="rsNo" type="button">تراجع</button></span>`;
-  document.getElementById('rsYes').onclick=()=>{done={};best={};stats={a:0,c:0};mistakes={};vknown={};checks={};last=null;mockLast=null;save();route();toast('تم التصفير')};
+  document.getElementById('rsYes').onclick=()=>{done={};best={};seenQ={};lastSet={};forms={};stats={a:0,c:0};mistakes={};vknown={};checks={};last=null;mockLast=null;save();route();toast('تم التصفير')};
   document.getElementById('rsNo').onclick=()=>route()}}
 
 /* ================= صفحة المسار ================= */
@@ -2328,15 +2337,32 @@ function bindPivot(){const r=document.getElementById('pvRow'),a=document.getElem
 
 function quizList(key,s,pane){
   const mc=Object.keys(mistakes).filter(k=>KEYQ[k]&&KEYQ[k].sec===key).length;
-  pane.innerHTML=`<div class="quizlist">${s.quizzes.map((q,i)=>`<div class="qcard"><h3>${q.title}</h3>
-    <span class="small">${q.qs.length} سؤال · ${best[q.id]!=null?'أفضل نتيجة '+pctBadge(best[q.id],q.qs.length):'ما اختبرته بعد'}</span>
-    <button class="btn sm" data-q="${i}" type="button">${best[q.id]!=null?'أعد الاختبار':'ابدأ'}</button></div>`).join('')}</div>
+  pane.innerHTML=`<div class="quizlist">${s.quizzes.map((q,i)=>{const has=best[q.id]!=null,again=has&&lastSet[q.id]&&lastSet[q.id].some(k=>KEYQ[k]);
+    return `<div class="qcard"><h3>${q.title}</h3>
+    <span class="small">${isRead(q)?'قطعتين':q.n+' سؤال'} بكل نموذج · البنك فيه ${q.qs.length} سؤال${forms[q.id]?' · سويت '+forms[q.id]+' نموذج':''}</span>
+    <span class="small">${has?'أفضل نتيجة '+bestBadge(q):'ما اختبرته بعد'}</span>
+    <div class="ctrls">${again?`<button class="btn ghost sm" data-again="${i}" type="button">أعد الاختبار</button>`:''}<button class="btn sm" data-q="${i}" type="button">${has?'اختبار جديد':'ابدأ'}</button></div></div>`}).join('')}</div>
     ${mc?`<div class="panel" style="--sec:var(--bad)"><h3>عندك ${mc} سؤال غلطت فيها في هذا المسار</h3><p class="note">راجعها لين تصححها كلها.</p><button class="btn sm" id="revSec" type="button">راجع أخطائي هنا</button></div>`:''}
-    <p class="note">الخيارات تتلخبط كل مرة عشان تفهم مو تحفظ. تقدر تجاوب بالأرقام 1 إلى 4 من الكيبورد، وEnter للتالي.</p>`;
-  pane.querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>{const q=s.quizzes[+b.dataset.q];
-    startRun({title:q.title,id:q.id,note:q.note,color:s.color,keys:q.qs.map((_,i)=>q.id+':'+i),back:()=>{tab[key]='quiz';section(key)}})});
+    <p class="note">"اختبار جديد" يجيب لك كل مرة نموذج بأسئلة ما شفتها قبل، لين تخلص البنك كله وبعدها يبدأ من جديد. و"أعد الاختبار" يعيد نفس النموذج الأخير. الخيارات تتلخبط كل مرة عشان تفهم مو تحفظ. تقدر تجاوب بالأرقام 1 إلى 4 من الكيبورد، وEnter للتالي.</p>`;
+  const go=(q,keys)=>startRun({title:q.title+' · نموذج '+(forms[q.id]||1),id:q.id,quiz:q,note:q.note,color:s.color,keys,back:()=>{tab[key]='quiz';section(key)}});
+  pane.querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>{const q=s.quizzes[+b.dataset.q];go(q,drawKeys(q))});
+  pane.querySelectorAll('[data-again]').forEach(b=>b.onclick=()=>{const q=s.quizzes[+b.dataset.again];go(q,lastSet[q.id].filter(k=>KEYQ[k]))});
   const rv=document.getElementById('revSec');if(rv)rv.onclick=()=>startRun({title:'مراجعة أخطاء '+s.name,color:s.color,review:true,keys:shuffle(Object.keys(mistakes).filter(k=>KEYQ[k]&&KEYQ[k].sec===key)),back:()=>{tab[key]='quiz';section(key)}});
 }
+
+/* نموذج جديد: يفضّل الأسئلة اللي ما انشافت، والقراءة تاخذ قطعتين كاملة. mark=false للاختبار التجريبي */
+function drawKeys(q,mark=true){const all=q.qs.map((_,i)=>q.id+':'+i);let pick;
+  if(isRead(q)){const g={};all.forEach(k=>{const p=KEYQ[k].d[0].p;(g[p]=g[p]||[]).push(k)});
+    const ps=Object.keys(g);let un=ps.filter(p=>g[p].some(k=>!seenQ[k]));
+    if(un.length<2){if(mark)all.forEach(k=>delete seenQ[k]);un=ps}
+    let pp=shuffle(un).slice(0,2);if(pp.length<2)pp=pp.concat(shuffle(ps.filter(p=>!pp.includes(p))).slice(0,2-pp.length));
+    pick=pp.flatMap(p=>g[p])}
+  else{const n=Math.min(q.n,all.length),un=shuffle(all.filter(k=>!seenQ[k]));
+    if(un.length>=n)pick=un.slice(0,n);
+    else{if(mark)all.forEach(k=>delete seenQ[k]);pick=un.concat(shuffle(all.filter(k=>!un.includes(k)))).slice(0,n)}}
+  if(mark){pick.forEach(k=>seenQ[k]=1);lastSet[q.id]=pick;forms[q.id]=(forms[q.id]||0)+1;save()}
+  return pick}
+function bestBadge(q){const b=best[q.id];return typeof b==='number'?pctBadge(b,q.n):pctBadge(b.s,b.n)}
 
 /* ================= مشغل الاختبار ================= */
 let run=null;
@@ -2370,16 +2396,17 @@ function answer(i){const r=run;if(!r||r.picked!=null)return;const it=r.items[r.n
   const nx=document.getElementById('next');nx.focus();nx.onclick=nextQ}
 function nextQ(){if(!run)return;run.n++;run.picked=null;renderRun();scrollTo(0,0)}
 function runResult(){const r=run,N=r.items.length,p=Math.round(r.score/N*100);
-  if(r.id&&(best[r.id]==null||r.score>best[r.id])){best[r.id]=r.score;save()}
+  if(r.id&&r.quiz){const b=best[r.id],old=b==null?-1:typeof b==='number'?b/r.quiz.n:b.s/b.n;if(r.score/N>old){best[r.id]={s:r.score,n:N};save()}}
   const msg=p>=90?'ممتاز! أنت متمكن من هالجزء.':p>=70?'زين جداً. راجع اللي غلطت فيه تحت.':p>=50?'بداية حلوة. ارجع للدروس وأعد الاختبار.':'عادي، كلنا بدينا كذا. اقرأ الدروس مرة ثانية وجرّب.';
   app.innerHTML=`<section class="view" style="--sec:var(${r.color||'--accent'})">
    <div class="runhead"><button class="back" id="bk" type="button">→ رجوع</button><span class="small">${esc(r.title)}</span></div>
    <div class="quiz"><div class="ring"><div class="score">${r.score}<span class="small"> / ${N}</span></div><div><b>${p}%</b><p class="note">${msg}</p></div></div>
-    <div class="ctrls">${r.review?'':`<button class="btn" id="again" type="button">أعد الاختبار</button>`}<button class="btn ghost" id="bk2" type="button">رجوع</button></div></div>
+    <div class="ctrls">${r.review?'':`${r.quiz?`<button class="btn" id="newf" type="button">اختبار جديد</button>`:''}<button class="btn${r.quiz?' ghost':''}" id="again" type="button">أعد الاختبار</button>`}<button class="btn ghost" id="bk2" type="button">رجوع</button></div></div>
    ${r.wrong.length?`<h2 class="h2">راجع أخطاءك <small>(انحفظت في "مراجعة أخطائي")</small></h2><div class="reviewlist">${r.wrong.map(w=>reviewCard(w.it,w.i)).join('')}</div>`:''}</section>`;
   const back=()=>{const b=r.back;run=null;b()};
   document.getElementById('bk').onclick=back;document.getElementById('bk2').onclick=back;
-  const ag=document.getElementById('again');if(ag)ag.onclick=()=>startRun({...r,keys:r.keys})}
+  const ag=document.getElementById('again');if(ag)ag.onclick=()=>startRun({...r,keys:r.keys});
+  const nf=document.getElementById('newf');if(nf)nf.onclick=()=>{const keys=drawKeys(r.quiz);startRun({...r,title:r.quiz.title+' · نموذج '+forms[r.quiz.id],keys})}}
 function reviewCard(it,i){const q=it.q;return `<div class="rv"><div>${typeof q==='string'?esc(q):esc(q.ar)+(q.en?`<div class="en">${esc(q.en)}</div>`:'')}</div>
   ${i!=null?`<div class="yours">إجابتك: <span class="${it.en?'en':''}">${i<0?'بدون إجابة':esc(it.opts[i])}</span></div>`:''}<div class="ans">الصحيح: <span class="${it.en?'en':''}">${esc(it.opts[it.right])}</span></div><div class="small">${esc(it.why)}</div></div>`}
 document.addEventListener('keydown',e=>{if(!run||e.target.closest('input,textarea,select'))return;
@@ -2398,7 +2425,8 @@ function mockIntro(key,s,pane){
    <p class="note">هذا تدريب على أسئلة البرنامج، والاختبار الحقيقي أطول وأصعب. خذ النتيجة كمؤشر لمستواك، مو تقدير لدرجتك الفعلية.</p>`;
   document.getElementById('mstart').onclick=startMock}
 function startMock(){
-  const items=[];MOCK_SECS.forEach(([id,name,qz,n])=>{let keys=[];qz.forEach(q=>{const Q=SECTIONS.step.quizzes.find(x=>x.id===q);Q.qs.forEach((_,i)=>keys.push(q+':'+i))});
+  const items=[];MOCK_SECS.forEach(([id,name,qz,n])=>{let keys=[];qz.forEach(q=>{const Q=SECTIONS.step.quizzes.find(x=>x.id===q);
+      if(id==='reading')keys=keys.concat(drawKeys(Q,false));else Q.qs.forEach((_,i)=>keys.push(q+':'+i))});
     keys=id==='reading'?keys:shuffle(keys).slice(0,n);keys.forEach(k=>items.push({...mkItem(k),ms:id,msn:name}))});
   mock={items,ans:Array(items.length).fill(null),n:0,end:Date.now()+50*60*1000,confirm:false};
   clearInterval(mockTimer);mockTimer=setInterval(tickMock,1000);location.hash='#mock';renderMock()}
